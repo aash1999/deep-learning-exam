@@ -21,12 +21,12 @@ if not os.path.exists(OUTPUT_PATH):
     os.makedirs(OUTPUT_PATH)
 
 BATCH_SIZE = 64
-IMG_H = 300
-IMG_W = 300
+IMG_H = 200
+IMG_W = 200
 N_CLASSES = 10
 EPOCHS = 100
 
-INPUT_SHAPE = IMG_H*IMG_W*3
+INPUT_SHAPE = IMG_H*IMG_W
 
 data_df = pd.read_excel(EXCEL_PATH)
 print(data_df.head())
@@ -42,12 +42,12 @@ train_labels = train_df['target_class'].apply(eval).tolist()
 test_labels = test_df['target_class'].apply(eval).tolist()
 
 
-def load_image(path : str, label: list) -> tuple[np.ndarray, tf.Tensor]:
-
+def load_image(path: str, label: list) -> tuple[np.ndarray, tf.Tensor]:
     image = tf.io.read_file(path)
-    image = tf.image.decode_jpeg(image, channels=3)
+    image = tf.image.decode_jpeg(image, channels=3)  # Decode as RGB
     image = tf.image.resize(image, (IMG_H, IMG_W))
-    image = image/255.0
+    image = tf.image.rgb_to_grayscale(image)  # Convert to grayscale
+    image = image / 255.0  # Normalize to [0, 1]
     return image, tf.convert_to_tensor(label)
 
 def load_image_test(path : str, label: list) -> tuple[np.ndarray, tf.Tensor]:
@@ -55,6 +55,7 @@ def load_image_test(path : str, label: list) -> tuple[np.ndarray, tf.Tensor]:
     image = tf.io.read_file(path)
     image = tf.image.decode_jpeg(image, channels=3)
     image = tf.image.resize(image, (IMG_H, IMG_W))
+    image = tf.image.rgb_to_grayscale(image)
     image = image/255.0
     image = tf.reshape(image, [-1])
     return image, tf.convert_to_tensor(label)
@@ -82,32 +83,32 @@ test_ds = tf.data.Dataset.from_tensor_slices((test_paths, test_labels))
 # Load images (Assuming `load_image` already normalizes and resizes)
 train_ds = train_ds.map(load_image, num_parallel_calls=tf.data.AUTOTUNE)
 test_ds = test_ds.map(load_image_test, num_parallel_calls=tf.data.AUTOTUNE)
-
-# **Apply Augmentation ONLY to Training Data**
 train_ds = train_ds.map(augment_image, num_parallel_calls=tf.data.AUTOTUNE)
-
-# Batch, Shuffle, and Prefetch
 train_ds = train_ds.shuffle(1000).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
 test_ds = test_ds.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
-
+print(INPUT_SHAPE)
 model = models.Sequential([
     layers.Input(shape=(INPUT_SHAPE,)),
-    layers.Dense(INPUT_SHAPE*(2//3)),
+    layers.Dense(4375),
     layers.BatchNormalization(),
     layers.ReLU(),
-    layers.Dropout(0.3),  # Add dropout after activation
+    layers.Dropout(0.3),
+
+    layers.Dense(512),
+    layers.BatchNormalization(),
+    layers.ReLU(),
+    layers.Dropout(0.3),
+
     layers.Dense(256),
     layers.BatchNormalization(),
     layers.ReLU(),
-    layers.Dropout(0.3),  # Add dropout after activation
+    layers.Dropout(0.3),
+
     layers.Dense(128),
     layers.BatchNormalization(),
     layers.ReLU(),
-    layers.Dropout(0.3),  # Add dropout after activation
-    layers.Dense(128),
-    layers.BatchNormalization(),
-    layers.ReLU(),
-    layers.Dropout(0.3),  # Add dropout after activation
+    layers.Dropout(0.3),
+
     layers.Dense(N_CLASSES, activation='softmax'),
 ])
 
@@ -140,23 +141,37 @@ if len(physical_devices) > 0:
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
 early_stopping = EarlyStopping(
-    monitor='val_loss',    # Monitor the validation loss
-    patience=10,             # Stop training after 5 epochs of no improvement
-    restore_best_weights=True  # Restore the best weights after training stops
+    monitor='val_loss',
+    patience=10,
+    restore_best_weights=True
 )
 
-# Define ModelCheckpoint callback
+
 checkpoint_callback = ModelCheckpoint(
-    OUTPUT_PATH+'model_epoch_{epoch:02d}.keras',  # Save model after each epoch with epoch number in filename
-    save_weights_only=False,       # Save the entire model (not just weights)
-    save_best_only=True,          # Save model after every epoch (not only the best one)
-    verbose=1                      # Display a message when the model is saved
+    OUTPUT_PATH+'model_epoch_{epoch:02d}.keras',
+    save_weights_only=False,
+    save_best_only=True,
+    verbose=1
 )
 
+import numpy as np
+from sklearn.utils.class_weight import compute_class_weight
+
+all_labels = []
+for _, labels in train_ds.unbatch():
+    all_labels.append(labels.numpy())
+
+all_labels = np.vstack(all_labels)
+all_labels_indices = np.argmax(all_labels, axis=1)
+num_classes = len(np.unique(all_labels_indices))
+class_weights = compute_class_weight(class_weight="balanced", classes=np.arange(num_classes), y=all_labels_indices)
+class_weight_dict = {int(k): float(v) for k, v in enumerate(class_weights)}
+print(class_weight_dict)
 model.fit(
     train_ds,
     epochs=EPOCHS,
     validation_data=test_ds,
+    class_weight=class_weight_dict,
     callbacks=[checkpoint_callback, early_stopping]
 )
 
