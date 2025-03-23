@@ -186,7 +186,7 @@ def predict_func(test_ds):
 
     final_model = tf.keras.models.load_model('model_{}.keras'.format(NICKNAME))
     res = final_model.predict(test_ds)
-
+    print(test_ds)
     save_model(final_model)
 
     ## write the rsults to a results_<nickname> xlsx
@@ -304,7 +304,7 @@ class_names = process_target(1)
 
 # Filtering the information
 xdf_dset = xdf_data[xdf_data["split"] == SPLIT].copy()
-
+print(xdf_dset.head())
 # processing the information
 test_ds= read_data(len(class_names))
 

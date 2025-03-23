@@ -2,7 +2,11 @@ import pandas as pd
 import numpy as np
 import os
 import tensorflow as tf
-from tensorflow.keras.preprocessing.image import load_img, img_to_array
+
+import warnings
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+warnings.filterwarnings("ignore", category=UserWarning, module='tensorflow')
 
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -16,10 +20,11 @@ OUTPUT_PATH = '/home/ubuntu/DL-Exam-1/DAY2/'
 if not os.path.exists(OUTPUT_PATH):
     os.makedirs(OUTPUT_PATH)
 
-BATCH_SIZE = 120
-IMG_H = 64
-IMG_W = 64
+BATCH_SIZE = 64
+IMG_H = 300
+IMG_W = 300
 N_CLASSES = 10
+EPOCHS = 100
 
 INPUT_SHAPE = IMG_H*IMG_W*3
 
@@ -87,13 +92,45 @@ test_ds = test_ds.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
 
 model = models.Sequential([
     layers.Input(shape=(INPUT_SHAPE,)),
-    layers.Dense(512, activation='relu'),
-    layers.Dense(256, activation='relu'),
-    layers.Dense(128, activation='relu'),
+    layers.Dense(INPUT_SHAPE*(2//3)),
+    layers.BatchNormalization(),
+    layers.ReLU(),
+    layers.Dropout(0.3),  # Add dropout after activation
+    layers.Dense(256),
+    layers.BatchNormalization(),
+    layers.ReLU(),
+    layers.Dropout(0.3),  # Add dropout after activation
+    layers.Dense(128),
+    layers.BatchNormalization(),
+    layers.ReLU(),
+    layers.Dropout(0.3),  # Add dropout after activation
+    layers.Dense(128),
+    layers.BatchNormalization(),
+    layers.ReLU(),
+    layers.Dropout(0.3),  # Add dropout after activation
     layers.Dense(N_CLASSES, activation='softmax'),
 ])
 
-model.compile(optimizer='adam',loss='categorical_crossentropy',metrics=['accuracy'])
+import tensorflow as tf
+from tensorflow.keras import backend as K
+
+
+def focal_loss(gamma=2., alpha=0.25):
+    def focal_loss_fixed(y_true, y_pred):
+        epsilon = K.epsilon()
+        y_true = K.clip(y_true, epsilon, 1. - epsilon)
+        y_pred = K.clip(y_pred, epsilon, 1. - epsilon)
+
+        cross_entropy = -y_true * K.log(y_pred)
+        loss = alpha * K.pow(1 - y_pred, gamma) * cross_entropy
+        return K.sum(loss, axis=-1)
+
+    return focal_loss_fixed
+
+model.compile(
+    optimizer='adam',
+    loss=focal_loss(),
+    metrics=['accuracy', 'f1_score'])
 
 physical_devices = tf.config.list_physical_devices('GPU')
 if len(physical_devices) > 0:
@@ -104,7 +141,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
 early_stopping = EarlyStopping(
     monitor='val_loss',    # Monitor the validation loss
-    patience=5,            # Stop training after 5 epochs of no improvement
+    patience=10,             # Stop training after 5 epochs of no improvement
     restore_best_weights=True  # Restore the best weights after training stops
 )
 
@@ -112,19 +149,19 @@ early_stopping = EarlyStopping(
 checkpoint_callback = ModelCheckpoint(
     OUTPUT_PATH+'model_epoch_{epoch:02d}.keras',  # Save model after each epoch with epoch number in filename
     save_weights_only=False,       # Save the entire model (not just weights)
-    save_best_only=False,          # Save model after every epoch (not only the best one)
+    save_best_only=True,          # Save model after every epoch (not only the best one)
     verbose=1                      # Display a message when the model is saved
 )
 
 model.fit(
     train_ds,
-    epochs=50,
+    epochs=EPOCHS,
     validation_data=test_ds,
-    callbacks=[early_stopping, early_stopping]
+    callbacks=[checkpoint_callback, early_stopping]
 )
 
 model.save(OUTPUT_PATH+'model_Alicia.keras')
-model.save('./model_Alicia.keras')
+# model.save('./model_Alicia.keras')
 
 with open(OUTPUT_PATH+'summary_Alicia.txt','w') as f:
     model.summary(print_fn=lambda x: f.write(x+"\n"))
