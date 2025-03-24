@@ -16,10 +16,10 @@ from tensorflow.keras.utils import to_categorical
 
 CHANNELS = 3
 
-IMG_H = 64
-IMG_W = 64
+IMG_H = 200
+IMG_W = 200
 N_CLASSES = 10
-INPUT_SHAPE = IMG_H*IMG_W*CHANNELS
+INPUT_SHAPE = IMG_H*IMG_W
 
 ##  0, 1, 3
 ## Review documentation on tersorflow https://www.tensorflow.org/api_docs/python/tf/io/decode_jpeg
@@ -115,12 +115,12 @@ def process_path(feature, target):
 
    ## Reshape the image to get the right dimensions for the initial input in the model
 
-    image = tf.io.read_file(feature)
+    image = tf.io.read_file(file_path)
     image = tf.image.decode_jpeg(image, channels=3)
     image = tf.image.resize(image, (IMG_H, IMG_W))
+    image = tf.image.rgb_to_grayscale(image)
     image = image / 255.0
     img = tf.reshape(image, [-1])
-
     return img, label
 #------------------------------------------------------------------------------------------------------------------
 
@@ -161,12 +161,8 @@ def read_data(num_classes):
     ## More information on https://www.tensorflow.org/tutorials/images/classification
 
     dataset = tf.data.Dataset.from_tensor_slices((ds_inputs, ds_targets))
-
-    # Step 4: Map preprocessing function
     dataset = dataset.map(lambda x, y: (process_path(x,y), y), num_parallel_calls=tf.data.AUTOTUNE)
-
-    # Step 5: Shuffle, batch, and prefetch
-    final_ds = dataset.shuffle(buffer_size=1000).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+    final_ds = dataset.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
 
     return final_ds
 #------------------------------------------------------------------------------------------------------------------

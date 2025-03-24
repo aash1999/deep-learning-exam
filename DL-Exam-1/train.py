@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import os
 import tensorflow as tf
+from tensorflow.keras.models import load_model
+from tensorflow.keras import layers, models
 
 import warnings
 
@@ -60,9 +62,6 @@ def load_image_test(path : str, label: list) -> tuple[np.ndarray, tf.Tensor]:
     image = tf.reshape(image, [-1])
     return image, tf.convert_to_tensor(label)
 
-from tensorflow.keras import layers, models
-
-
 data_augmentation = tf.keras.Sequential([
     layers.RandomFlip("horizontal"),
     layers.RandomRotation(0.1),
@@ -112,26 +111,21 @@ model = models.Sequential([
     layers.Dense(N_CLASSES, activation='softmax'),
 ])
 
-import tensorflow as tf
-from tensorflow.keras import backend as K
 
 
-def focal_loss(gamma=2., alpha=0.25):
-    def focal_loss_fixed(y_true, y_pred):
-        epsilon = K.epsilon()
-        y_true = K.clip(y_true, epsilon, 1. - epsilon)
-        y_pred = K.clip(y_pred, epsilon, 1. - epsilon)
+try:
+    best_model_path = OUTPUT_PATH + "model_epoch_51.keras"
+    model = load_model(best_model_path)
+    print("-----Model Loaded-----")
+    start_epoch = 51
+except:
+    print("-----Model Not Loaded-----")
 
-        cross_entropy = -y_true * K.log(y_pred)
-        loss = alpha * K.pow(1 - y_pred, gamma) * cross_entropy
-        return K.sum(loss, axis=-1)
-
-    return focal_loss_fixed
-
-model.compile(
-    optimizer='adam',
-    loss=focal_loss(),
-    metrics=['accuracy', 'f1_score'])
+    model.compile(
+        optimizer='adam',
+        loss=tf.keras.losses.CategoricalFocalCrossentropy(gamma=2.0),
+        metrics=['accuracy', 'f1_score'])
+    start_epoch = 0
 
 physical_devices = tf.config.list_physical_devices('GPU')
 if len(physical_devices) > 0:
@@ -141,14 +135,15 @@ if len(physical_devices) > 0:
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
 early_stopping = EarlyStopping(
-    monitor='val_loss',
-    patience=10,
+    monitor='val_accuracy',
+    patience=20,
     restore_best_weights=True
 )
 
 
 checkpoint_callback = ModelCheckpoint(
     OUTPUT_PATH+'model_epoch_{epoch:02d}.keras',
+    monitor='val_accuracy',
     save_weights_only=False,
     save_best_only=True,
     verbose=1
@@ -167,8 +162,9 @@ num_classes = len(np.unique(all_labels_indices))
 class_weights = compute_class_weight(class_weight="balanced", classes=np.arange(num_classes), y=all_labels_indices)
 class_weight_dict = {int(k): float(v) for k, v in enumerate(class_weights)}
 print(class_weight_dict)
-model.fit(
+history = model.fit(
     train_ds,
+    initial_epoch = start_epoch,
     epochs=EPOCHS,
     validation_data=test_ds,
     class_weight=class_weight_dict,
@@ -193,6 +189,37 @@ results_df = pd.DataFrame({
 })
 
 results_df.to_excel(OUTPUT_PATH+"results_Alicia.xlsx", index=False)
+
+
+import os
+import matplotlib.pyplot as plt
+
+# Ensure the 'plots' directory exists
+plots_dir = os.path.join(OUTPUT_PATH, "plots")
+os.makedirs(plots_dir, exist_ok=True)
+
+plt.figure()
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.title('Training and Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+plt.savefig(os.path.join(plots_dir, "loss_plot.png"))
+plt.close()
+
+# Training and Validation Accuracy
+plt.figure()
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.title('Training and Validation Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.savefig(os.path.join(plots_dir, "accuracy_plot.png"))
+plt.close()
+
+
 
 
 
