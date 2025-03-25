@@ -16,8 +16,8 @@ from tensorflow.keras.utils import to_categorical
 
 CHANNELS = 3
 
-IMG_H = 200
-IMG_W = 200
+IMG_H = 150
+IMG_W = 150
 N_CLASSES = 10
 INPUT_SHAPE = IMG_H*IMG_W
 
@@ -118,7 +118,7 @@ def process_path(feature, target):
     image = tf.io.read_file(file_path)
     image = tf.image.decode_jpeg(image, channels=3)
     image = tf.image.resize(image, (IMG_H, IMG_W))
-    image = tf.image.rgb_to_grayscale(image)
+    # image = tf.image.rgb_to_grayscale(image)
     image = image / 255.0
     img = tf.reshape(image, [-1])
     return img, label
@@ -192,9 +192,9 @@ def predict_func(test_ds):
     # Predict probabilities
     res = final_model.predict(test_ds)
     y_pred = np.argmax(res, axis=1)
-    y_pred_labels = [f'class{i+1}' for i in y_pred]
+    # y_pred_labels = [f'i' for i in y_pred]
     if len(xdf_dset) == len(y_pred):
-        xdf_dset['results'] = y_pred_labels
+        xdf_dset['results'] = y_pred
     else:
         print("Error: Mismatch between xdf_dset rows and predictions.")
 
