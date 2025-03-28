@@ -14,10 +14,14 @@ from tensorflow.keras.utils import to_categorical
 '''
 #------------------------------------------------------------------------------------------------------------------
 
+###### TO DOOOOOOOOOOO pip install cuml-cu11 --extra-index-url=https://pypi.nvidia.com
+
+
+
 CHANNELS = 3
 
-IMG_H = 150
-IMG_W = 150
+IMG_H = 125
+IMG_W = 125
 N_CLASSES = 10
 INPUT_SHAPE = IMG_H*IMG_W
 
@@ -114,14 +118,17 @@ def process_path(feature, target):
    ## Make some augmentation if possible
 
    ## Reshape the image to get the right dimensions for the initial input in the model
-
-    image = tf.io.read_file(file_path)
+    # Read and decode the image
+    image = tf.io.read_file(feature)
     image = tf.image.decode_jpeg(image, channels=3)
-    image = tf.image.resize(image, (IMG_H, IMG_W))
-    # image = tf.image.rgb_to_grayscale(image)
-    image = image / 255.0
-    img = tf.reshape(image, [-1])
-    return img, label
+    image = tf.image.resize(image, [IMG_H, IMG_W])
+    # <- End
+
+    # image = tf.image.rgb_to_grayscale(image)  # Convert to grayscale
+    image = image / 255.0  # Normalize to [0, 1]
+
+    return image, target
+
 #------------------------------------------------------------------------------------------------------------------
 
 
@@ -161,9 +168,12 @@ def read_data(num_classes):
     ## More information on https://www.tensorflow.org/tutorials/images/classification
 
     dataset = tf.data.Dataset.from_tensor_slices((ds_inputs, ds_targets))
-    dataset = dataset.map(lambda x, y: (process_path(x,y), y), num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.map(lambda x, y: process_path(x, y), num_parallel_calls=tf.data.AUTOTUNE)
     final_ds = dataset.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
-
+    for batch in final_ds.take(1):
+        features, labels = batch
+        print("Feature shape:", tf.shape(features))
+        print("Label shape:", tf.shape(labels))
     return final_ds
 #------------------------------------------------------------------------------------------------------------------
 
@@ -182,7 +192,7 @@ def predict_func(test_ds):
 
     final_model = tf.keras.models.load_model('model_{}.keras'.format(NICKNAME))
     res = final_model.predict(test_ds)
-    print(test_ds)
+
     save_model(final_model)
 
     ## write the rsults to a results_<nickname> xlsx
